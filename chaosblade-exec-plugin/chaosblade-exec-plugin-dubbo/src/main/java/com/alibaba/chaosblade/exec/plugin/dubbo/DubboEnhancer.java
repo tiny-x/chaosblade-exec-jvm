@@ -23,6 +23,7 @@ import com.alibaba.chaosblade.exec.common.aop.EnhancerModel;
 import com.alibaba.chaosblade.exec.common.model.action.delay.TimeoutExecutor;
 import com.alibaba.chaosblade.exec.common.model.matcher.MatcherModel;
 import com.alibaba.chaosblade.exec.common.util.ReflectUtil;
+import com.alibaba.chaosblade.exec.common.util.StringUtils;
 import com.alibaba.chaosblade.exec.plugin.dubbo.model.DubboThreadPoolFullExecutor;
 import com.alibaba.fastjson.JSON;
 
@@ -40,18 +41,20 @@ public abstract class DubboEnhancer extends BeforeEnhancer {
     public static final String APPLICATION_KEY = "application";
     public static final String GET_SERVICE_KEY = "getServiceKey";
     public static final String GET_METHOD_NAME = "getMethodName";
+    public static final String GENERIC = "generic";
     public static final String SPLIT_TOKEN = ":";
     public static final String GROUP_SEP = "/";
     public static final String GET_INVOKER = "getInvoker";
     public static final String RECEIVED_METHOD = "received";
+    public static final String GET_ARGUMENTS = "getArguments";
     public static final int INVALID_POS = -1;
     private static final Logger LOGGER = LoggerFactory.getLogger(DubboEnhancer.class);
 
     @Override
     public EnhancerModel doBeforeAdvice(ClassLoader classLoader, String className, Object object,
                                         Method method, Object[]
-                                            methodArguments)
-        throws Exception {
+                                                methodArguments)
+            throws Exception {
         if (method.getName().equals(RECEIVED_METHOD)) {
             // received method for thread pool experiment
             DubboThreadPoolFullExecutor.INSTANCE.setWrappedChannelHandler(object);
@@ -68,8 +71,18 @@ public abstract class DubboEnhancer extends BeforeEnhancer {
             LOGGER.warn("Url is null, can not get necessary values.");
             return null;
         }
-        String appName = ReflectUtil.invokeMethod(url, GET_PARAMETER, new Object[] {APPLICATION_KEY}, false);
-        String methodName = ReflectUtil.invokeMethod(invocation, GET_METHOD_NAME, new Object[0], false);
+        String appName = ReflectUtil.invokeMethod(url, GET_PARAMETER, new Object[]{APPLICATION_KEY}, false);
+        String generic = ReflectUtil.invokeMethod(url, GET_PARAMETER, new Object[]{GENERIC}, false);
+        String methodName = null;
+        if (StringUtils.isNotBlank(generic) && Boolean.valueOf(generic)) {
+            Object[] arguments = ReflectUtil.invokeMethod(invocation, GET_ARGUMENTS, new Object[0], false);
+            if (arguments.length > 1 &&  arguments[0] instanceof String) {
+                methodName = (String) arguments[0];
+            }
+        } else {
+            methodName = ReflectUtil.invokeMethod(invocation, GET_METHOD_NAME, new Object[0], false);
+        }
+
         String[] serviceAndVersionGroup = getServiceNameWithVersionGroup(invocation, url);
 
         MatcherModel matcherModel = new MatcherModel();
@@ -77,7 +90,7 @@ public abstract class DubboEnhancer extends BeforeEnhancer {
         matcherModel.add(DubboConstant.SERVICE_KEY, serviceAndVersionGroup[0]);
         matcherModel.add(DubboConstant.VERSION_KEY, serviceAndVersionGroup[1]);
         if (2 < serviceAndVersionGroup.length &&
-            null != serviceAndVersionGroup[2]) {
+                null != serviceAndVersionGroup[2]) {
             matcherModel.add(DubboConstant.GROUP_KEY, serviceAndVersionGroup[2]);
         }
         matcherModel.add(DubboConstant.METHOD_KEY, methodName);
@@ -121,9 +134,9 @@ public abstract class DubboEnhancer extends BeforeEnhancer {
 
             String[] serviceAndVersion = serviceKey.split(SPLIT_TOKEN);
             if (serviceAndVersion.length == 1) {
-                return new String[] {serviceAndVersion[0], DEFAULT_VERSION, group};
+                return new String[]{serviceAndVersion[0], DEFAULT_VERSION, group};
             }
-            return new String[] {serviceAndVersion[0], serviceAndVersion[1], group};
+            return new String[]{serviceAndVersion[0], serviceAndVersion[1], group};
         }
     }
 
